@@ -44,7 +44,6 @@ yaml.add_constructor(
 
 # --- End of the fix ---
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--base-dir",
@@ -55,13 +54,13 @@ parser.add_argument(
 parser.add_argument(
     "--user-config-dir",
     type=Path,
-    default=Path(__file__).resolve().parent / "user_configs_test_2",
+    default=Path(__file__).resolve().parent / "user_configs_test_1",
     help="Directory containing user configuration YAML files",
 )
 parser.add_argument(
     "--global-config-path",
     type=Path,
-    default=Path(__file__).resolve().parent / "global_config_2.yaml",
+    default=Path(__file__).resolve().parent / "global_config_1.yaml",
     help="Path to global configuration YAML file",
 )
 parser.add_argument(
@@ -83,6 +82,25 @@ parser.add_argument(
     help="Path to save rent allocation pie chart image",
 )
 parser.add_argument(
+    "--ideal-proportional-output-yaml-path",
+    type=Path,
+    default=Path(__file__).resolve().parent
+    / "ideal_proportional_rent_allocations.yaml",
+    help="Path to save ideal proportional rent allocation YAML file",
+)
+parser.add_argument(
+    "--ideal-proportional-bar-chart-path",
+    type=Path,
+    default=Path(__file__).resolve().parent / "ideal_proportional_barplot.png",
+    help="Path to save ideal proportional rent allocation bar chart image",
+)
+parser.add_argument(
+    "--ideal-proportional-pie-chart-path",
+    type=Path,
+    default=Path(__file__).resolve().parent / "ideal_proportional_piechart.png",
+    help="Path to save ideal proportional rent allocation pie chart image",
+)
+parser.add_argument(
     "--beta-min-violation",
     type=float,
     default=10.0,
@@ -97,6 +115,9 @@ GLOBAL_CONFIG_PATH = args.global_config_path
 OUTPUT_YAML_PATH = args.output_yaml_path
 BAR_CHART_PATH = args.bar_chart_path
 PIE_CHART_PATH = args.pie_chart_path
+IDEAL_PROPORTIONAL_OUTPUT_YAML_PATH = args.ideal_proportional_output_yaml_path
+IDEAL_PROPORTIONAL_BAR_CHART_PATH = args.ideal_proportional_bar_chart_path
+IDEAL_PROPORTIONAL_PIE_CHART_PATH = args.ideal_proportional_pie_chart_path
 DEFAULT_BETA_MIN_VIOLATION = args.beta_min_violation
 
 
@@ -202,7 +223,7 @@ class RentAllocatorApp:
 
         self.users = list(self.user_data.keys())
         self.ideals = {
-            user: data.get("ideal", 0) for user, data in self.user_data.items()
+            user: data.get("Ideal", 0) for user, data in self.user_data.items()
         }
         self.mins = {
             user: data.get("Minimum", 0) for user, data in self.user_data.items()
@@ -561,6 +582,16 @@ class RentAllocatorApp:
                     lw=1.2,
                     label="Max Rent" if i == 0 else "",
                 )
+            # Ideal lines
+            ideal_val = self.ideals.get(user, 0)
+            self.bar_ax.plot(
+                [x_indices[i] - width, x_indices[i] + width],
+                [ideal_val, ideal_val],
+                color="blue",
+                linestyle="-.",
+                lw=1.2,
+                label="Ideal Rent" if i == 0 else "",
+            )
 
         self.bar_ax.set_xticks(x_indices)
         self.bar_ax.set_xticklabels(self.users, rotation=45, ha="right", fontsize=9)
@@ -608,6 +639,120 @@ class RentAllocatorApp:
         self.pie_fig.tight_layout()
         self.pie_canvas.draw()
 
+    def _generate_proportional_plots(self):
+        """Generates and saves the ideal proportional bar and pie charts."""
+        if not self.proportional_initial_allocations or not self.users:
+            logging.warning("No proportional allocation data for plotting.")
+            return
+
+        prop_alloc_vals = [
+            self.proportional_initial_allocations.get(u, 0) for u in self.users
+        ]
+        min_vals = [self.mins.get(u, 0) for u in self.users]
+        max_vals_plot = [
+            self.maxs.get(u, np.nan) for u in self.users
+        ]  # Use NaN for inf for plotting logic
+
+        # Bar Chart
+        prop_bar_fig, prop_bar_ax = plt.subplots(figsize=(8, 5))
+        x_indices = np.arange(len(self.users))
+        width = 0.5
+
+        prop_bar_ax.bar(
+            x_indices,
+            prop_alloc_vals,
+            width,
+            label="Ideal Proportional Allocation",
+            color="skyblue",
+            edgecolor="grey",
+        )
+
+        for i, user in enumerate(self.users):
+            # Min lines
+            prop_bar_ax.plot(
+                [x_indices[i] - width / 2, x_indices[i] + width / 2],
+                [min_vals[i], min_vals[i]],
+                color="green",
+                linestyle="--",
+                lw=1.2,
+                label="Min Rent" if i == 0 else "",
+            )
+            # Max lines (only if not inf)
+            if not np.isnan(max_vals_plot[i]) and max_vals_plot[i] != float("inf"):
+                prop_bar_ax.plot(
+                    [x_indices[i] - width / 2, x_indices[i] + width / 2],
+                    [max_vals_plot[i], max_vals_plot[i]],
+                    color="red",
+                    linestyle=":",
+                    lw=1.2,
+                    label="Max Rent" if i == 0 else "",
+                )
+            # Ideal lines (which are the bars in this case, but good to explicitly show)
+            ideal_val = self.ideals.get(user, 0)
+            prop_bar_ax.plot(
+                [x_indices[i] - width / 2, x_indices[i] + width / 2],
+                [ideal_val, ideal_val],
+                color="blue",
+                linestyle="-.",
+                lw=1.2,
+                label="Ideal Rent" if i == 0 else "",
+            )
+
+        prop_bar_ax.set_xticks(x_indices)
+        prop_bar_ax.set_xticklabels(self.users, rotation=45, ha="right", fontsize=9)
+        prop_bar_ax.set_ylabel("Rent (€)", fontsize=10)
+        prop_bar_ax.set_title("Ideal Proportional Rent Allocation", fontsize=12)
+        prop_bar_ax.legend(fontsize="small")
+        prop_bar_ax.grid(axis="y", linestyle="--", alpha=0.7)
+        prop_bar_fig.tight_layout()
+        prop_bar_fig.savefig(IDEAL_PROPORTIONAL_BAR_CHART_PATH)
+        plt.close(prop_bar_fig)  # Close to free up memory
+        logging.info(
+            f"Ideal proportional bar chart saved to {IDEAL_PROPORTIONAL_BAR_CHART_PATH}"
+        )
+
+        # Pie Chart
+        prop_pie_fig, prop_pie_ax = plt.subplots(figsize=(6, 5))
+        valid_pie_data = [
+            val for val in prop_alloc_vals if val is not None and val > 1e-6
+        ]
+        pie_labels_data = [
+            self.users[i]
+            for i, val in enumerate(prop_alloc_vals)
+            if val is not None and val > 1e-6
+        ]
+
+        if not valid_pie_data or sum(valid_pie_data) == 0:
+            prop_pie_ax.text(
+                0.5,
+                0.5,
+                "No positive proportional allocations\nto display in pie chart.",
+                ha="center",
+                va="center",
+                fontsize=10,
+                wrap=True,
+            )
+        else:
+            pie_display_labels = [
+                f"{label}\n({self.proportional_initial_allocations.get(label, 0):.2f}€)"
+                for label in pie_labels_data
+            ]
+            prop_pie_ax.pie(
+                valid_pie_data,
+                labels=pie_display_labels,
+                autopct="%1.1f%%",
+                startangle=90,
+                textprops={"fontsize": 8},
+            )
+            prop_pie_ax.set_title("Ideal Proportional Rent Share", fontsize=12)
+        prop_pie_ax.axis("equal")
+        prop_pie_fig.tight_layout()
+        prop_pie_fig.savefig(IDEAL_PROPORTIONAL_PIE_CHART_PATH)
+        plt.close(prop_pie_fig)  # Close to free up memory
+        logging.info(
+            f"Ideal proportional pie chart saved to {IDEAL_PROPORTIONAL_PIE_CHART_PATH}"
+        )
+
     def slider_changed(self, new_value_str):
         try:
             self.global_adjustment_alpha = float(new_value_str) / 100.0
@@ -635,6 +780,7 @@ class RentAllocatorApp:
         self.update_plots()
 
     def save_final_allocations(self):
+        # Save final (slider-adjusted) allocations and plots
         if self.final_allocations and all(
             isinstance(val, (int, float)) for val in self.final_allocations.values()
         ):
@@ -647,26 +793,68 @@ class RentAllocatorApp:
                         sort_keys=False,
                         default_flow_style=False,
                     )
-                logging.info(f"Allocations saved to {OUTPUT_YAML_PATH}")
+                logging.info(f"Final allocations saved to {OUTPUT_YAML_PATH}")
 
                 self.bar_fig.savefig(BAR_CHART_PATH)
-                logging.info(f"Bar chart saved to {BAR_CHART_PATH}")
+                logging.info(f"Final bar chart saved to {BAR_CHART_PATH}")
                 self.pie_fig.savefig(PIE_CHART_PATH)
-                logging.info(f"Pie chart saved to {PIE_CHART_PATH}")
+                logging.info(f"Final pie chart saved to {PIE_CHART_PATH}")
+
                 messagebox.showinfo(
                     "Save Successful",
-                    f"Allocations and plots saved to:\n{OUTPUT_YAML_PATH.name}\n{BAR_CHART_PATH.name}\n{PIE_CHART_PATH.name}",
+                    f"Final allocations and plots saved to:\n{OUTPUT_YAML_PATH.name}\n{BAR_CHART_PATH.name}\n{PIE_CHART_PATH.name}",
                 )
             except Exception as e:
-                logging.error(f"Error saving allocations or plots: {e}")
+                logging.error(f"Error saving final allocations or plots: {e}")
                 messagebox.showerror(
-                    "Save Error", f"Failed to save allocations/plots: {e}"
+                    "Save Error", f"Failed to save final allocations/plots: {e}"
                 )
         else:
-            logging.warning("Attempted to save but no valid allocations available.")
+            logging.warning(
+                "Attempted to save final allocations but no valid data available."
+            )
             messagebox.showwarning(
                 "Save Failed",
-                "No valid allocations to save. Please ensure the optimization was successful.",
+                "No valid final allocations to save. Please ensure the optimization was successful.",
+            )
+
+        # Save ideal proportional allocations and plots
+        if self.proportional_initial_allocations and all(
+            isinstance(val, (int, float))
+            for val in self.proportional_initial_allocations.values()
+        ):
+            try:
+                with open(IDEAL_PROPORTIONAL_OUTPUT_YAML_PATH, "w") as f:
+                    yaml.dump(
+                        self.proportional_initial_allocations,
+                        f,
+                        allow_unicode=True,
+                        sort_keys=False,
+                        default_flow_style=False,
+                    )
+                logging.info(
+                    f"Ideal proportional allocations saved to {IDEAL_PROPORTIONAL_OUTPUT_YAML_PATH}"
+                )
+                self._generate_proportional_plots()  # Generate and save the plots
+                messagebox.showinfo(
+                    "Save Successful",
+                    f"Ideal proportional allocations and plots saved to:\n{IDEAL_PROPORTIONAL_OUTPUT_YAML_PATH.name}\n{IDEAL_PROPORTIONAL_BAR_CHART_PATH.name}\n{IDEAL_PROPORTIONAL_PIE_CHART_PATH.name}",
+                )
+            except Exception as e:
+                logging.error(
+                    f"Error saving ideal proportional allocations or plots: {e}"
+                )
+                messagebox.showerror(
+                    "Save Error",
+                    f"Failed to save ideal proportional allocations/plots: {e}",
+                )
+        else:
+            logging.warning(
+                "Attempted to save ideal proportional allocations but no valid data available."
+            )
+            messagebox.showwarning(
+                "Save Failed",
+                "No valid ideal proportional allocations to save. Please ensure proportional calculation was successful.",
             )
 
 
